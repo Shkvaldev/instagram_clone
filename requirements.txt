@@ -1,0 +1,4 @@
+loguru
+Pillow
+instagrapi
+fastapi[standard]

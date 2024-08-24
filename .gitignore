@@ -1,0 +1,6 @@
+.venv
+.ipynb_checkpoints
+config.py.back
+logs/*
+!logs/.gitkeep
+__pycache__
