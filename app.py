@@ -1,5 +1,4 @@
-import time
-import uuid
+import os
 from pprint import pprint
 from typing import Annotated, Dict, Any
 from datetime import datetime
@@ -13,7 +12,7 @@ from instagrapi.exceptions import (
 )
 
 # Project imports
-from models import Account4Login
+from models import LoginAccount
 
 app = FastAPI(
     title = "Instagram clonner",
@@ -30,15 +29,17 @@ app.add_middleware(
 
 # Log creation
 log = logger
-log.add(f"logs/clonner_{time.strftime('%H:%M:%S')}.log", format="[ {time} ] [ {level} ] [ {message} ]", rotation="50 MB")
+#log.add(f"logs/clonner_{time.strftime('%H:%M:%S')}.log", format="[ {time} ] [ {level} ] [ {message} ]", rotation="50 MB")
 
 CLIENTS = {}
 
 @app.post('/login')
-def login(request: Request, auth_data: Account4Login):
+def login(request: Request, auth_data: LoginAccount):
     """
     Logging in instagram account
 
+    TODO!: Add session saving
+    
     Returns:
         ```json
         {
@@ -47,17 +48,71 @@ def login(request: Request, auth_data: Account4Login):
         ```
     """
     log.debug(f"User with ip {request.client.host} is trying to log in instagram account") # type: ignore
-    try:
-        new_client = Client()
-        new_client.delay_range = [1, 3]
-        new_client.login(auth_data.login, auth_data.password)
-    except (BadPassword, RecaptchaChallengeForm, FeedbackRequired, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired):
-        log.debug(f"User with ip {request.client.host} failed to log in instagram account") # type: ignore
+    new_client = Client()
+    new_client.delay_range = [1, 3]
+    session_file = os.path.join("sessions", f"{auth_data.login}.json")
+    if os.path.exists(session_file):
+        try:
+            # Loading session if exists
+            new_client.load_settings(session_file)
+            log.debug(f"User with ip {request.client.host} loaded session for '{auth_data.login}'") # type: ignore
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to load session from file: {e}"
+            )
+    else:
+        try:
+            new_client.login(auth_data.login, auth_data.password)
+            new_client.dump_settings(session_file)
+            # TODO!: Save session
+        except (BadPassword, RecaptchaChallengeForm, FeedbackRequired, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired):
+            log.debug(f"User with ip {request.client.host} failed to log in instagram account") # type: ignore
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Bad credentails or proxy"
+            )
+    CLIENTS[auth_data.login] = new_client
+    log.debug(f"New user with ip {request.client.host} logged in instagram account") # type: ignore
+    return {"id": auth_data.login} 
+
+@app.get('/account_info')
+def get_followings(request: Request, login: str):
+    """
+    Retrives account info
+
+    Args:
+        login (str): User's login
+    """
+    log.debug(f"User with ip {request.client.host} is trying to get account info for '{login}'") # type: ignore
+    if login not in CLIENTS.keys():
+        log.debug(f"User with ip {request.client.host} failed to get account info for '{login}'") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Bad credentails or proxy"
-        ) 
-    id = str(uuid.uuid4())
-    CLIENTS[id] = new_client
-    log.debug(f"New user with ip {request.client.host} logged in instagram account") # type: ignore
-    return {"id": id} 
+            detail="You must be loginned before! Reffer to /login!"
+        )
+    # Getting info via API
+    data =  CLIENTS[login].account_info().dict()
+    log.debug(f"User with ip {request.client.host} got account info for '{login}'") # type: ignore
+    return data
+
+@app.get('/get_followings')
+def get_followings(request: Request, login: str):
+    """
+    Retrives account's followings
+
+    Args:
+        login (str): User's login
+    """
+    log.debug(f"User with ip {request.client.host} is trying to get followings for '{login}'") # type: ignore
+    if login not in CLIENTS.keys():
+        log.debug(f"User with ip {request.client.host} failed to get followings for '{login}'") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You must be loginned before! Reffer to /login!"
+        )
+    # Getting info via API
+    data =  CLIENTS[login].user_following(CLIENTS[login].user_id)
+    print(f"[*] User's id is {CLIENTS[login].user_id}")
+    log.debug(f"User with ip {request.client.host} got followings for '{login}'") # type: ignore
+    return data

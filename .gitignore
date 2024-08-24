@@ -3,4 +3,6 @@
 config.py.back
 logs/*
 !logs/.gitkeep
+sessions/*
+!sessions/.gitkeep
 __pycache__
