@@ -1,4 +1,5 @@
 import os
+import time
 from pprint import pprint
 from typing import Annotated, Dict, Any
 from datetime import datetime
@@ -8,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from instagrapi import Client
 from instagrapi.exceptions import (
     BadPassword, ChallengeRequired, RecaptchaChallengeForm,
-    FeedbackRequired, PleaseWaitFewMinutes, LoginRequired
+    FeedbackRequired, PleaseWaitFewMinutes, LoginRequired,
+    ProxyAddressIsBlocked
 )
 
 # Project imports
@@ -29,7 +31,7 @@ app.add_middleware(
 
 # Log creation
 log = logger
-#log.add(f"logs/clonner_{time.strftime('%H:%M:%S')}.log", format="[ {time} ] [ {level} ] [ {message} ]", rotation="50 MB")
+log.add(os.path.join("logs", f"clonner_{time.strftime('%H_%M_%S')}.log"), format="[ {time} ] [ {level} ] [ {message} ]", rotation="50 MB")
 
 CLIENTS = {}
 
@@ -57,6 +59,7 @@ def login(request: Request, auth_data: LoginAccount):
             new_client.load_settings(session_file)
             log.debug(f"User with ip {request.client.host} loaded session for '{auth_data.login}'") # type: ignore
         except Exception as e:
+            log.debug(f"User with ip {request.client.host} failed to log in instagram account via saved session: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to load session from file: {e}"
@@ -66,11 +69,11 @@ def login(request: Request, auth_data: LoginAccount):
             new_client.login(auth_data.login, auth_data.password)
             new_client.dump_settings(session_file)
             # TODO!: Save session
-        except (BadPassword, RecaptchaChallengeForm, FeedbackRequired, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired):
-            log.debug(f"User with ip {request.client.host} failed to log in instagram account") # type: ignore
+        except (BadPassword, RecaptchaChallengeForm, FeedbackRequired, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired, ProxyAddressIsBlocked) as e:
+            log.debug(f"User with ip {request.client.host} failed to log in instagram account: {e}") # type: ignore
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Bad credentails or proxy"
+                detail=f"Bad credentails or proxy: {e}"
             )
     CLIENTS[auth_data.login] = new_client
     log.debug(f"New user with ip {request.client.host} logged in instagram account") # type: ignore
