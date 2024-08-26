@@ -1,7 +1,7 @@
 import os
 import time
 from pprint import pprint
-from typing import Annotated, Dict, Any
+from typing import Annotated, Dict, Any, List
 from datetime import datetime
 from loguru import logger
 from fastapi import FastAPI, Depends, HTTPException, status, Request
@@ -114,6 +114,7 @@ def get_followings(request: Request, login: str):
     Args:
         login (str): User's login
     """
+    session_file = os.path.join("sessions", f"{login}.json")
     log.debug(f"User with ip {request.client.host} is trying to get followings for '{login}'") # type: ignore
     if login not in CLIENTS.keys():
         log.debug(f"User with ip {request.client.host} failed to get followings for '{login}'") # type: ignore
@@ -123,7 +124,11 @@ def get_followings(request: Request, login: str):
         )
     # Getting followings
     try:
-        data =  CLIENTS[login].user_following(CLIENTS[login].user_id)
+        del CLIENTS[login]
+        client = Client()
+        client.load_settings(session_file)
+        CLIENTS[login] = client
+        data = CLIENTS[login].user_following(CLIENTS[login].user_id)
     except Exception as e:
         log.debug(f"User with ip {request.client.host} failed to get followings for '{login}': {e}") # type: ignore
         raise HTTPException(
@@ -132,6 +137,45 @@ def get_followings(request: Request, login: str):
         )
     log.debug(f"User with ip {request.client.host} got followings for '{login}'") # type: ignore
     return data
+
+@app.post('/add_followings')
+def add_followings(request: Request, login: str, following_ids: List[str]):
+    """
+    Adds followings
+
+    Args:
+        login (str): User's login
+        following_ids (List[str]): Array of media ids
+    """
+    log.debug(f"User with ip {request.client.host} is trying to add followings for '{login}'") # type: ignore
+    if login not in CLIENTS.keys():
+        log.debug(f"User with ip {request.client.host} failed to add followings for '{login}'") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You must be loginned before! Reffer to /login!"
+        )
+    if len(following_ids) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_204_NO_CONTENT,
+            detail=f"There is no any following in request - fill 'following_ids' field"
+        )
+    result = {
+        'success': [],
+        'waiting': [],
+        'fail': []
+    }
+    for following_id in following_ids:
+        try:
+            if CLIENTS[login].user_follow(following_id):
+                result['success'].append(following_id)
+            else:
+                raise ValueError("Check logs to get more info")
+        except FeedbackRequired:
+            result['waiting'].append(following_id)
+        except Exception as e:
+            log.error(f"Failed to add following '{following_id}' to collection for '{login}': {e}")
+            result['fail'].append(following_id)
+    return result
 
 @app.get('/get_collections')
 def get_collections(request: Request, login: str):
@@ -160,3 +204,39 @@ def get_collections(request: Request, login: str):
         )
     log.debug(f"User with ip {request.client.host} got collections for '{login}'") # type: ignore
     return data
+
+@app.post('/add_medias_to_collection')
+def add_medias(request: Request, login: str, media_ids: List[str]):
+    """
+    Adds medias to collection
+
+    Args:
+        login (str): User's login
+        media_ids (List[str]): Array of media ids
+    """
+    log.debug(f"User with ip {request.client.host} is trying to add medias to collections for '{login}'") # type: ignore
+    if login not in CLIENTS.keys():
+        log.debug(f"User with ip {request.client.host} failed to add medias to collections for '{login}'") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You must be loginned before! Reffer to /login!"
+        )
+    if len(media_ids) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_204_NO_CONTENT,
+            detail=f"There is no any media in request - fill 'media_ids' field"
+        )
+    result = {
+        'success': [],
+        'fail': []
+    }
+    for media_id in media_ids:
+        try:
+            if CLIENTS[login].media_save(media_id):
+                result['success'].append(media_id)
+            else:
+                raise ValueError("Check logs to get more info")
+        except Exception as e:
+            log.error(f"Failed to add media '{media_id}' to collection for '{login}': {e}")
+            result['fail'].append(media_id)
+    return result
