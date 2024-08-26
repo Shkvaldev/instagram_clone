@@ -80,7 +80,7 @@ def login(request: Request, auth_data: LoginAccount):
     return {"id": auth_data.login} 
 
 @app.get('/account_info')
-def get_followings(request: Request, login: str):
+def account_info(request: Request, login: str):
     """
     Retrives account info
 
@@ -94,8 +94,15 @@ def get_followings(request: Request, login: str):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You must be loginned before! Reffer to /login!"
         )
-    # Getting info via API
-    data =  CLIENTS[login].account_info().dict()
+    # Getting account info
+    try:
+        data =  CLIENTS[login].account_info().dict()
+    except Exception as e:
+        log.debug(f"User with ip {request.client.host} failed to get account info for '{login}': {e}") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
+        )
     log.debug(f"User with ip {request.client.host} got account info for '{login}'") # type: ignore
     return data
 
@@ -114,8 +121,42 @@ def get_followings(request: Request, login: str):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You must be loginned before! Reffer to /login!"
         )
-    # Getting info via API
-    data =  CLIENTS[login].user_following(CLIENTS[login].user_id)
-    print(f"[*] User's id is {CLIENTS[login].user_id}")
+    # Getting followings
+    try:
+        data =  CLIENTS[login].user_following(CLIENTS[login].user_id)
+    except Exception as e:
+        log.debug(f"User with ip {request.client.host} failed to get followings for '{login}': {e}") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
+        )
     log.debug(f"User with ip {request.client.host} got followings for '{login}'") # type: ignore
+    return data
+
+@app.get('/get_collections')
+def get_collections(request: Request, login: str):
+    """
+    Retrives account's collections
+
+    Args:
+        login (str): User's login
+    """
+    log.debug(f"User with ip {request.client.host} is trying to get collections for '{login}'") # type: ignore
+    if login not in CLIENTS.keys():
+        log.debug(f"User with ip {request.client.host} failed to get collections for '{login}'") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You must be loginned before! Reffer to /login!"
+        )
+    # Getting collections
+    try:
+        collections = CLIENTS[login].collections()
+        data = [{'id': collection.id, 'name': collection.name, 'amount': collection.media_count, 'medias': CLIENTS[login].collection_medias(collection_pk=collection.id, amount=0)} for collection in collections]
+    except Exception as e:
+        log.debug(f"User with ip {request.client.host} failed to get collections for '{login}': {e}") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
+        )
+    log.debug(f"User with ip {request.client.host} got collections for '{login}'") # type: ignore
     return data
