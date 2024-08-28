@@ -58,8 +58,15 @@ def login(request: Request, auth_data: LoginAccount):
             # Loading session if exists
             new_client.load_settings(session_file)
             log.debug(f"User with ip {request.client.host} loaded session for '{auth_data.login}'") # type: ignore
+        except (RecaptchaChallengeForm, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired, ProxyAddressIsBlocked) as e:
+            log.error(f"User with ip {request.client.host} failed to log in instagram account via saved session via '{login}' because of Instagram API restriction: {e}") # type: ignore
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get info from API because of Instagram API restriction - connect with admin to overcome this problem: {e}"
+            )
         except Exception as e:
-            log.debug(f"User with ip {request.client.host} failed to log in instagram account via saved session: {e}")
+            log.error(f"User with ip {request.client.host} failed to log in instagram account via saved session: {e}")
+            os.remove(session_file)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to load session from file: {e}"
@@ -68,15 +75,20 @@ def login(request: Request, auth_data: LoginAccount):
         try:
             new_client.login(auth_data.login, auth_data.password)
             new_client.dump_settings(session_file)
-            # TODO!: Save session
-        except (BadPassword, RecaptchaChallengeForm, FeedbackRequired, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired, ProxyAddressIsBlocked) as e:
-            log.debug(f"User with ip {request.client.host} failed to log in instagram account: {e}") # type: ignore
+        except (RecaptchaChallengeForm, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired, ProxyAddressIsBlocked) as e:
+            log.error(f"User with ip {request.client.host} failed to log in instagram account for '{login}' because of Instagram API restriction: {e}") # type: ignore
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get info from API because of Instagram API restriction - connect with admin to overcome this problem: {e}"
+            )
+        except (BadPassword, Exception) as e:
+            log.error(f"User with ip {request.client.host} failed to log in instagram account: {e}") # type: ignore
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Bad credentails or proxy: {e}"
             )
     CLIENTS[auth_data.login] = new_client
-    log.debug(f"New user with ip {request.client.host} logged in instagram account") # type: ignore
+    log.success(f"New user with ip {request.client.host} logged in instagram account") # type: ignore
     return {"id": auth_data.login} 
 
 @app.get('/account_info')
@@ -89,7 +101,7 @@ def account_info(request: Request, login: str):
     """
     log.debug(f"User with ip {request.client.host} is trying to get account info for '{login}'") # type: ignore
     if login not in CLIENTS.keys():
-        log.debug(f"User with ip {request.client.host} failed to get account info for '{login}'") # type: ignore
+        log.error(f"User with ip {request.client.host} failed to get account info for '{login}'") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You must be loginned before! Reffer to /login!"
@@ -97,13 +109,19 @@ def account_info(request: Request, login: str):
     # Getting account info
     try:
         data =  CLIENTS[login].account_info().dict()
+    except (RecaptchaChallengeForm, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired, ProxyAddressIsBlocked) as e:
+        log.error(f"User with ip {request.client.host} failed to get account info for '{login}' because of Instagram API restriction: {e}") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get info from API because of Instagram API restriction - connect with admin to overcome this problem: {e}"
+        )
     except Exception as e:
-        log.debug(f"User with ip {request.client.host} failed to get account info for '{login}': {e}") # type: ignore
+        log.error(f"User with ip {request.client.host} failed to get account info for '{login}': {e}") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
         )
-    log.debug(f"User with ip {request.client.host} got account info for '{login}'") # type: ignore
+    log.success(f"User with ip {request.client.host} got account info for '{login}'") # type: ignore
     return data
 
 @app.get('/get_followings')
@@ -117,7 +135,7 @@ def get_followings(request: Request, login: str):
     session_file = os.path.join("sessions", f"{login}.json")
     log.debug(f"User with ip {request.client.host} is trying to get followings for '{login}'") # type: ignore
     if login not in CLIENTS.keys():
-        log.debug(f"User with ip {request.client.host} failed to get followings for '{login}'") # type: ignore
+        log.error(f"User with ip {request.client.host} failed to get followings for '{login}'") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You must be loginned before! Reffer to /login!"
@@ -129,13 +147,19 @@ def get_followings(request: Request, login: str):
         client.load_settings(session_file)
         CLIENTS[login] = client
         data = CLIENTS[login].user_following(CLIENTS[login].user_id)
+    except (RecaptchaChallengeForm, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired, ProxyAddressIsBlocked) as e:
+        log.error(f"User with ip {request.client.host} failed to get followings for for '{login}' because of Instagram API restriction: {e}") # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get info from API because of Instagram API restriction - connect with admin to overcome this problem: {e}"
+        )
     except Exception as e:
-        log.debug(f"User with ip {request.client.host} failed to get followings for '{login}': {e}") # type: ignore
+        log.error(f"User with ip {request.client.host} failed to get followings for '{login}': {e}") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
         )
-    log.debug(f"User with ip {request.client.host} got followings for '{login}'") # type: ignore
+    log.success(f"User with ip {request.client.host} got followings for '{login}'") # type: ignore
     return data
 
 @app.post('/add_followings')
@@ -149,12 +173,13 @@ def add_followings(request: Request, login: str, following_ids: List[str]):
     """
     log.debug(f"User with ip {request.client.host} is trying to add followings for '{login}'") # type: ignore
     if login not in CLIENTS.keys():
-        log.debug(f"User with ip {request.client.host} failed to add followings for '{login}'") # type: ignore
+        log.error(f"User with ip {request.client.host} failed to add followings for '{login}'") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You must be loginned before! Reffer to /login!"
         )
     if len(following_ids) == 0:
+        log.error(f"User with ip {request.client.host} failed to add 0 followings for '{login}'")
         raise HTTPException(
             status_code=status.HTTP_204_NO_CONTENT,
             detail=f"There is no any following in request - fill 'following_ids' field"
@@ -172,9 +197,16 @@ def add_followings(request: Request, login: str, following_ids: List[str]):
                 raise ValueError("Check logs to get more info")
         except FeedbackRequired:
             result['waiting'].append(following_id)
+        except (RecaptchaChallengeForm, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired, ProxyAddressIsBlocked) as e:
+            log.error(f"User with ip {request.client.host} failed to add followings for '{login}' because of Instagram API restriction: {e}") # type: ignore
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get info from API because of Instagram API restriction - connect with admin to overcome this problem: {e}"
+            )
         except Exception as e:
             log.error(f"Failed to add following '{following_id}' to collection for '{login}': {e}")
             result['fail'].append(following_id)
+    log.success(f"User with ip {request.client.host} added followings")
     return result
 
 @app.get('/get_collections')
@@ -187,22 +219,23 @@ def get_collections(request: Request, login: str):
     """
     log.debug(f"User with ip {request.client.host} is trying to get collections for '{login}'") # type: ignore
     if login not in CLIENTS.keys():
-        log.debug(f"User with ip {request.client.host} failed to get collections for '{login}'") # type: ignore
+        log.error(f"User with ip {request.client.host} failed to get collections for '{login}'") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You must be loginned before! Reffer to /login!"
         )
     # Getting collections
+    # NOTE!: Can not catch Instagram resrictions here
     try:
         collections = CLIENTS[login].collections()
         data = [{'id': collection.id, 'name': collection.name, 'amount': collection.media_count, 'medias': CLIENTS[login].collection_medias(collection_pk=collection.id, amount=0)} for collection in collections]
     except Exception as e:
-        log.debug(f"User with ip {request.client.host} failed to get collections for '{login}': {e}") # type: ignore
+        log.error(f"User with ip {request.client.host} failed to get collections for '{login}': {e}") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
         )
-    log.debug(f"User with ip {request.client.host} got collections for '{login}'") # type: ignore
+    log.success(f"User with ip {request.client.host} got collections for '{login}'") # type: ignore
     return data
 
 @app.post('/add_medias_to_collection')
@@ -216,12 +249,13 @@ def add_medias(request: Request, login: str, media_ids: List[str]):
     """
     log.debug(f"User with ip {request.client.host} is trying to add medias to collections for '{login}'") # type: ignore
     if login not in CLIENTS.keys():
-        log.debug(f"User with ip {request.client.host} failed to add medias to collections for '{login}'") # type: ignore
+        log.error(f"User with ip {request.client.host} failed to add medias to collections for '{login}'") # type: ignore
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You must be loginned before! Reffer to /login!"
         )
     if len(media_ids) == 0:
+        log.error(f"User with ip {request.client.host} failed to add 0 medias to collection for '{login}'")
         raise HTTPException(
             status_code=status.HTTP_204_NO_CONTENT,
             detail=f"There is no any media in request - fill 'media_ids' field"
@@ -236,7 +270,14 @@ def add_medias(request: Request, login: str, media_ids: List[str]):
                 result['success'].append(media_id)
             else:
                 raise ValueError("Check logs to get more info")
+        except (RecaptchaChallengeForm, PleaseWaitFewMinutes, LoginRequired, ChallengeRequired, ProxyAddressIsBlocked) as e:
+            log.error(f"User with ip {request.client.host} failed to add media to collection for '{login}' because of Instagram API restriction: {e}") # type: ignore
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get info from API because of Instagram API restriction - connect with admin to overcome this problem: {e}"
+            )
         except Exception as e:
             log.error(f"Failed to add media '{media_id}' to collection for '{login}': {e}")
             result['fail'].append(media_id)
+    log.success(f"User with ip {request.client.host} added medias to collection for '{login}'") # type: ignore
     return result
