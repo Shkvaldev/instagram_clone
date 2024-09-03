@@ -6,6 +6,7 @@ from datetime import datetime
 from loguru import logger
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from instagrapi import Client
 from instagrapi.exceptions import (
     BadPassword, ChallengeRequired, RecaptchaChallengeForm,
@@ -15,6 +16,7 @@ from instagrapi.exceptions import (
 
 # Project imports
 from models import LoginAccount
+from cache import CacheManager
 
 app = FastAPI(
     title = "Instagram clonner",
@@ -32,6 +34,10 @@ app.add_middleware(
 # Log creation
 log = logger
 log.add(os.path.join("logs", f"clonner_{time.strftime('%H_%M_%S')}.log"), format="[ {time} ] [ {level} ] [ {message} ]", rotation="50 MB")
+
+# Setting up cache
+cache_manager = CacheManager(logger=log)
+app.mount("/cache", StaticFiles(directory="cache"), name="cached_images")
 
 CLIENTS = {}
 
@@ -121,8 +127,15 @@ def account_info(request: Request, login: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
         )
+    
+    # Processing profile data
+    result = {
+        'pk': data['pk'],
+        'username': data['username'],
+        'profile_pic_url': "/cache/"+cache_manager.save(target_url=str(data['profile_pic_url']), fresh=True)
+    }
     log.success(f"User with ip {request.client.host} got account info for '{login}'") # type: ignore
-    return data
+    return result
 
 @app.get('/get_followings')
 def get_followings(request: Request, login: str):
@@ -159,8 +172,22 @@ def get_followings(request: Request, login: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
         )
+    
+    # Processing info
+    result = {}
+    for following_id, following_data in data.items():
+        try:
+            result[following_id] = {
+                "pk": following_data.pk,
+                "username": following_data.username,
+                "full_name": following_data.full_name,
+                "profile_pic_url": "/cache/"+cache_manager.save(target_url=str(following_data.profile_pic_url))
+            }
+        except Exception as e:
+            log.error(f"Failed to process info for following {following_id}: {e}")
+            continue
     log.success(f"User with ip {request.client.host} got followings for '{login}'") # type: ignore
-    return data
+    return result
 
 @app.post('/add_followings')
 def add_followings(request: Request, login: str, following_ids: List[str]):
@@ -235,6 +262,21 @@ def get_collections(request: Request, login: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get info from API - connect with admin to overcome this problem: {e}"
         )
+    
+    # Processing medias info
+    for collection in data:
+        try:
+            medias = collection['medias']
+            collection['medias'] = [{
+                'pk': media.pk,
+                'id': media.id,
+                'caption_text': media.caption_text,
+                'thumbnail_url': "/cache/"+cache_manager.save(target_url=str(media.thumbnail_url))
+            } for media in medias]
+        except Exception as e:
+            log.error(f"Failed to process medias info for collections: {e}")
+            continue
+
     log.success(f"User with ip {request.client.host} got collections for '{login}'") # type: ignore
     return data
 

@@ -1,8 +1,19 @@
+# Environments
 .venv
 .ipynb_checkpoints
-config.py.back
+
+# Logs
 logs/*
 !logs/.gitkeep
+
+# Saved sessions
 sessions/*
 !sessions/.gitkeep
+
+# Cached images
+cache/*
+!cache/.gitkeep
+!cache/default.png
+
+# Other
 __pycache__
